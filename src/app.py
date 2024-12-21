@@ -1,55 +1,65 @@
+from json import dumps
+from logging import INFO, basicConfig, getLogger
+
 from faust import App
-from logging import basicConfig, getLogger, INFO
+
 from .benchmark.models import BenchmarkMessage
 from .utils.s3 import (
-    create_s3_client,
-    create_bucket,
     bucket_exists,
-    upload_object
+    create_bucket,
+    create_s3_client,
+    upload_object,
 )
 
 BUFFER_MESSAGE_COUNT = 100
 BUFFER_PERIOD = 60
+BUCKET_NAME = "faust"
 
 basicConfig(level=INFO)
 logger = getLogger(__name__)
 
 app = App(
-    'benchmark_fault',
-    broker='kafka://192.168.49.2:30000',
-    store='memory://',
+    "benchmark_fault",
+    broker="kafka://192.168.49.2:30000",
+    store="memory://",
 )
 
-benchmark_topic = app.topic('benchmark_fault', value_type=BenchmarkMessage)
-
-
-def output_sink(value):
-    yield f'AGENT YIELD: {value!r}'
+benchmark_topic = app.topic("benchmark_fault", value_type=BenchmarkMessage)
 
 
 @app.agent(benchmark_topic)
 async def process(stream):
-    async for batch in stream.take(max_=BUFFER_MESSAGE_COUNT, within=BUFFER_PERIOD):
-        s3_client = create_s3_client(
-            endpoint_url='http://localhost:9000',
-            access_key='ADMIN',
-            secret_key='ADMINADMIN'
-        )
+    s3_client = create_s3_client(
+        endpoint_url="http://localhost:9000",
+        access_key="ADMIN",
+        secret_key="12345678",
+    )
 
-        bucket_name = "faust"
-
-        if not bucket_exists(s3_client, bucket_name):
-            create_bucket(s3_client, bucket_name)
+    async for batch in stream.take(
+            max_=BUFFER_MESSAGE_COUNT, within=BUFFER_PERIOD
+    ):
+        if not bucket_exists(s3_client, BUCKET_NAME):
+            create_bucket(s3_client, BUCKET_NAME)
 
         logger.info("Batch is initialized.")
         for event in batch:
-            logger.info(f"Received message: {event}")
-            upload_object(
-                s3_client,
-                bucket_name,
-                str(event.id),
-                "Test Message"
+            event_data = dumps(
+                {
+                    "id": event.id,
+                    "type": event.type,
+                    "message": event.message,
+                    "datetime": event.datetime.isoformat(),
+                    "process_id": event.process_id,
+                    "client_id": event.client_id,
+                }
+            ).encode("utf-8")
+
+            blob_key = (
+                f"client_id={event.client_id}/"
+                f"key={event.id}_{event.datetime.isoformat()}.json"
             )
+
+            upload_object(s3_client, BUCKET_NAME, blob_key, event_data)
 
 
 def main() -> None:

@@ -1,0 +1,23 @@
+version: '3.8'
+
+services:
+  minio:
+    image: minio/minio
+    container_name: minio
+    command: server /data --console-address ":9001"
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    environment:
+      MINIO_ROOT_USER: ADMIN
+      MINIO_ROOT_PASSWORD: 12345678
+    volumes:
+      - minio_data:/data
+    networks:
+      - iceberg_net
+
+volumes:
+  minio_data:
+
+networks:
+  iceberg_net:
