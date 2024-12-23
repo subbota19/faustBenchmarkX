@@ -14,6 +14,7 @@ from .utils.s3 import (
 BUFFER_MESSAGE_COUNT = 100
 BUFFER_PERIOD = 60
 BUCKET_NAME = "faust"
+ENCODING = "utf-8"
 
 basicConfig(level=INFO)
 logger = getLogger(__name__)
@@ -35,11 +36,12 @@ async def process(stream):
         secret_key="12345678",
     )
 
+    if not bucket_exists(s3_client, BUCKET_NAME):
+        create_bucket(s3_client, BUCKET_NAME)
+
     async for batch in stream.take(
             max_=BUFFER_MESSAGE_COUNT, within=BUFFER_PERIOD
     ):
-        if not bucket_exists(s3_client, BUCKET_NAME):
-            create_bucket(s3_client, BUCKET_NAME)
 
         logger.info("Batch is initialized.")
         for event in batch:
@@ -52,7 +54,7 @@ async def process(stream):
                     "process_id": event.process_id,
                     "client_id": event.client_id,
                 }
-            ).encode("utf-8")
+            ).encode(ENCODING)
 
             blob_key = (
                 f"client_id={event.client_id}/"
